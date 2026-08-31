@@ -1,61 +1,43 @@
 """
-AERIS - Fetch Historical Air Quality Data from OpenAQ v3
-==========================================================
-
-Lokasi file ini di project: pipeline/fetch/openaq_historical.py
-
-Mengambil data historis PM2.5 dan PM10 dari stasiun-stasiun OpenAQ
-di wilayah Jakarta, lalu menyimpannya sebagai CSV mentah ke data/raw/.
-
-Cara pakai
-----------
-1. Daftar API key gratis di https://explore.openaq.org (Settings > API Keys)
-2. Simpan ke file .env di root project:
-       OPENAQ_API_KEY=xxxxxxxxxxxxxxxx
-3. Install dependency:
-       pip install requests python-dotenv
-4. Jalankan DARI ROOT PROJECT (bukan dari dalam folder pipeline/fetch/),
-   supaya path output data/raw/ mengarah ke tempat yang benar:
-       python -m pipeline.fetch.openaq_historical --days 30
-   (atau atur --date-from / --date-to manual, lihat --help)
-
-Output
-------
-Untuk tiap sensor PM2.5/PM10 yang ditemukan di dalam bounding box Jakarta,
-script akan membuat satu file CSV di:
-    data/raw/openaq/{location_name}__sensor{sensor_id}__{parameter}.csv
-
-Kolom: datetime_utc, value, unit, parameter, sensor_id,
-       location_id, location_name, latitude, longitude
+AERIS - Fetch Historical Air Quality (PM2.5 & PM10) from OpenAQ v3
+===================================================================
+Lokasi file: pipeline/fetch/openaq_historical.py
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import math
 import os
-import re
 import sys
 import time
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
+# Tambahan import untuk menangani error timeout dari library requests
+from requests.exceptions import Timeout, ConnectionError, RequestException
 
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass  # python-dotenv opsional, bisa juga set env var manual
+    pass
 
 API_BASE = "https://api.openaq.org/v3"
 
-# Bounding box kasar untuk DKI Jakarta (min_lon, min_lat, max_lon, max_lat).
-# Perluas sendiri kalau mau mencakup Bogor/Depok/Tangerang/Bekasi.
+TARGET_STATIONS = [
+    {"region": "jakarta_pusat", "name": "Bunderan HI / US Embassy", "lat": -6.182536, "lon": 106.828236},
+    {"region": "jakarta_selatan", "name": "Jagakarsa", "lat": -6.325500, "lon": 106.814400},
+    {"region": "jakarta_barat", "name": "Kebon Jeruk", "lat": -6.194900, "lon": 106.764500},
+    {"region": "jakarta_timur", "name": "Lubang Buaya", "lat": -6.289600, "lon": 106.900300},
+    {"region": "jakarta_utara", "name": "Kelapa Gading", "lat": -6.155300, "lon": 106.892300},
+]
+
 JAKARTA_BBOX = (106.65, -6.40, 106.98, -6.05)
-
 TARGET_PARAMETERS = {"pm25", "pm10"}
-
 OUTPUT_DIR = Path("data/raw/openaq")
 
 
@@ -76,36 +58,65 @@ def make_session() -> requests.Session:
 
 
 def request_with_retry(session: requests.Session, url: str, params: dict, max_retries: int = 5):
-    """GET dengan retry sederhana untuk menangani rate limit (429), timeout (408) & error transient."""
+    """Fungsi yang sudah diperkuat dengan try-except dan Rate Limit Tracking"""
     for attempt in range(max_retries):
-        resp = session.get(url, params=params, timeout=60)
-        if resp.status_code == 200:
-            return resp.json()
-        if resp.status_code == 429:
-            wait = int(resp.headers.get("Retry-After", 5))
-            print(f"  Rate limited, menunggu {wait}s ...")
-            time.sleep(wait)
-            continue
-        if resp.status_code == 408:
-            # Server OpenAQ kewalahan mengagregasi rentang yang diminta.
-            # Retry dengan backoff -- kalau tetap gagal, caller yang akan
-            # memperkecil ukuran chunk tanggalnya.
+        try:
+            resp = session.get(url, params=params, timeout=60)
+            
+            # --- MULAI TRACKING RATE LIMIT ---
+            # OpenAQ mengembalikan header menggunakan huruf kecil (lowercase)
+            limit = resp.headers.get('x-ratelimit-limit', 'N/A')
+            remaining = resp.headers.get('x-ratelimit-remaining', 'N/A')
+            
+            # (Opsional) Tampilkan sisa limit jika sudah menipis (misal di bawah 100)
+            if remaining != 'N/A' and int(remaining) < 100:
+                print(f"    [WARNING] Sisa kuota API OpenAQ menipis: {remaining}/{limit}")
+            # --- SELESAI TRACKING RATE LIMIT ---
+
+            if resp.status_code == 200:
+                # Jika ingin memantau TERUS-MENERUS di setiap request, buka komentar (uncomment) baris di bawah:
+                # print(f"    [API] Sisa request bulan ini: {remaining}/{limit}")
+                return resp.json()
+            
+            if resp.status_code == 429:
+                # Jika terkena limit (kuota habis atau request terlalu cepat)
+                wait = int(resp.headers.get("Retry-After", 10))
+                print(f"    [429] Rate limited! Sisa kuota: {remaining}. Istirahat {wait}s ...")
+                time.sleep(wait)
+                continue
+                
+            if resp.status_code in (408, 500, 502, 503, 504):
+                wait = 2 ** attempt
+                print(f"    [{resp.status_code}] Server sibuk, retry dalam {wait}s ...")
+                time.sleep(wait)
+                continue
+                
+            resp.raise_for_status()
+
+        except Timeout:
             wait = 2 ** attempt
-            print(f"  Server timeout (408), retry dalam {wait}s ...")
+            print(f"    [Timeout] OpenAQ tidak merespon dalam 60s, coba lagi dalam {wait}s ...")
             time.sleep(wait)
-            continue
-        if resp.status_code >= 500:
+        except ConnectionError:
             wait = 2 ** attempt
-            print(f"  Server error {resp.status_code}, retry dalam {wait}s ...")
+            print(f"    [Koneksi Putus] Jaringan terganggu, coba lagi dalam {wait}s ...")
             time.sleep(wait)
-            continue
-        # error lain (400/401/404) - langsung berhenti, biar kelihatan errornya
-        resp.raise_for_status()
-    return None  # gagal setelah semua retry -- caller yang menentukan tindakan
+        except RequestException as e:
+            print(f"    [Error Fatal] {e}")
+            break
+            
+    return None
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
+    return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 def get_jakarta_locations(session: requests.Session) -> list[dict]:
-    """Ambil semua lokasi monitoring di dalam bbox Jakarta."""
     print("Mengambil daftar lokasi monitoring di Jakarta ...")
     locations = []
     page = 1
@@ -119,6 +130,8 @@ def get_jakarta_locations(session: requests.Session) -> list[dict]:
                 "page": page,
             },
         )
+        if not data:
+            break
         results = data.get("results", [])
         if not results:
             break
@@ -126,41 +139,51 @@ def get_jakarta_locations(session: requests.Session) -> list[dict]:
         if len(results) < 1000:
             break
         page += 1
-    print(f"  Ditemukan {len(locations)} lokasi.")
+    print(f"  Ditemukan {len(locations)} lokasi stasiun OpenAQ.")
     return locations
 
 
-def extract_target_sensors(locations: list[dict]) -> list[dict]:
-    """Filter sensor PM2.5 / PM10 dari daftar lokasi."""
+def map_sensors_to_target_stations(locations: list[dict]) -> list[dict]:
     sensors = []
     for loc in locations:
         coords = loc.get("coordinates") or {}
+        lat = coords.get("latitude")
+        lon = coords.get("longitude")
+        if lat is None or lon is None:
+            continue
+
+        nearest_target = min(
+            TARGET_STATIONS,
+            key=lambda t: haversine_distance(lat, lon, t["lat"], t["lon"]),
+        )
+        dist_km = haversine_distance(lat, lon, nearest_target["lat"], nearest_target["lon"])
+
         for sensor in loc.get("sensors", []):
             param_name = (sensor.get("parameter") or {}).get("name", "").lower()
             if param_name not in TARGET_PARAMETERS:
                 continue
+
             sensors.append(
                 {
                     "sensor_id": sensor["id"],
                     "parameter": param_name,
-                    "unit": (sensor.get("parameter") or {}).get("units", ""),
-                    "location_id": loc.get("id"),
-                    "location_name": loc.get("name", "unknown"),
-                    "latitude": coords.get("latitude"),
-                    "longitude": coords.get("longitude"),
+                    "unit": (sensor.get("parameter") or {}).get("units", "µg/m³"),
+                    "target_region": nearest_target["region"],
+                    "target_station_name": nearest_target["name"],
+                    "target_lat": nearest_target["lat"],
+                    "target_lon": nearest_target["lon"],
+                    "actual_location_name": loc.get("name", "unknown"),
+                    "actual_lat": lat,
+                    "actual_lon": lon,
+                    "distance_km": round(dist_km, 2),
                 }
             )
-    print(f"  Ditemukan {len(sensors)} sensor PM2.5/PM10.")
+    print(f"  Ditemukan {len(sensors)} sensor (PM2.5 / PM10) terpetakan.")
     return sensors
 
 
-def safe_filename(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_")
-
-
-def month_chunks(date_from: str, date_to: str, chunk_days: int = 30):
-    """Pecah rentang tanggal jadi potongan-potongan kecil (default 30 hari),
-    supaya tiap request ke OpenAQ lebih ringan dan tidak timeout (408)."""
+def month_chunks(date_from: str, date_to: str, chunk_days: int = 7):
+    """PERUBAHAN: Diperkecil menjadi 7 hari (seminggu) agar request lebih ringan"""
     start = datetime.strptime(date_from, "%Y-%m-%d")
     end = datetime.strptime(date_to, "%Y-%m-%d")
     chunks = []
@@ -172,78 +195,54 @@ def month_chunks(date_from: str, date_to: str, chunk_days: int = 30):
     return chunks
 
 
-def fetch_sensor_hours_chunk(
-    session: requests.Session,
-    sensor: dict,
-    date_from: str,
-    date_to: str,
-) -> list[dict]:
-    """Ambil data satu chunk tanggal (sudah dipecah kecil) untuk satu sensor,
-    dengan pagination di dalam chunk itu."""
-    rows = []
-    page = 1
-    # Untuk satu chunk 30 hari, maksimal 30*24/1000 = ~1 halaman biasanya.
-    # Kasih ruang lebih untuk jaga-jaga tapi tetap ada batas wajar.
-    max_pages = 5
-    while True:
-        if page > max_pages:
-            print(
-                f"    PERINGATAN: chunk {date_from}..{date_to} sudah {max_pages} "
-                f"halaman ({len(rows)} baris), dihentikan untuk jaga-jaga."
-            )
-            break
-        data = request_with_retry(
-            session,
-            f"{API_BASE}/sensors/{sensor['sensor_id']}/hours",
-            params={
-                "datetime_from": date_from,
-                "datetime_to": date_to,
-                "limit": 1000,
-                "page": page,
-            },
-        )
-        if data is None:
-            print(f"    Gagal ambil chunk {date_from}..{date_to} setelah beberapa percobaan, dilewati.")
-            break
-        results = data.get("results", [])
-        if not results:
-            break
-        for r in results:
-            period = r.get("period", {})
-            rows.append(
-                {
-                    "datetime_utc": (period.get("datetimeFrom") or {}).get("utc"),
-                    "value": r.get("value"),
-                    "unit": sensor["unit"],
-                    "parameter": sensor["parameter"],
-                    "sensor_id": sensor["sensor_id"],
-                    "location_id": sensor["location_id"],
-                    "location_name": sensor["location_name"],
-                    "latitude": sensor["latitude"],
-                    "longitude": sensor["longitude"],
-                }
-            )
-        if len(results) < 1000:
-            break
-        page += 1
-        time.sleep(0.2)
-    return rows
-
-
-def fetch_sensor_hours(
-    session: requests.Session,
-    sensor: dict,
-    date_from: str,
-    date_to: str,
-) -> list[dict]:
-    """Ambil data rata-rata per jam untuk satu sensor, dipecah per chunk 30 hari
-    supaya tidak membebani API dalam satu request besar (menghindari 408)."""
+def fetch_sensor_hours(session: requests.Session, sensor: dict, date_from: str, date_to: str) -> list[dict]:
     all_rows = []
-    chunks = month_chunks(date_from, date_to, chunk_days=30)
-    for i, (chunk_from, chunk_to) in enumerate(chunks, start=1):
-        rows = fetch_sensor_hours_chunk(session, sensor, chunk_from, chunk_to)
-        all_rows.extend(rows)
-        time.sleep(0.2)
+    # Memotong periode panjang menjadi potongan kecil 7 hari
+    chunks = month_chunks(date_from, date_to, chunk_days=7)
+    
+    for chunk_from, chunk_to in chunks:
+        page = 1
+        while page <= 5: 
+            data = request_with_retry(
+                session,
+                f"{API_BASE}/sensors/{sensor['sensor_id']}/hours",
+                params={
+                    "datetime_from": chunk_from,
+                    "datetime_to": chunk_to,
+                    "limit": 1000,
+                    "page": page,
+                },
+            )
+            
+            # Jika retries sudah diusahakan tapi tetap None (gagal), lewati chunk ini
+            if not data:
+                print(f"    ! Gagal ambil periode {chunk_from} s/d {chunk_to}, melewati ke minggu berikutnya...")
+                break
+                
+            results = data.get("results", [])
+            if not results:
+                break
+                
+            for r in results:
+                period = r.get("period", {})
+                all_rows.append(
+                    {
+                        "datetime_utc": (period.get("datetimeFrom") or {}).get("utc"),
+                        "value": r.get("value"),
+                        "unit": sensor["unit"],
+                        "parameter": sensor["parameter"],
+                        "target_region": sensor["target_region"],
+                        "target_lat": sensor["target_lat"],
+                        "target_lon": sensor["target_lon"],
+                        "sensor_id": sensor["sensor_id"],
+                        "source_station": sensor["actual_location_name"],
+                    }
+                )
+            if len(results) < 1000:
+                break
+            page += 1
+            time.sleep(0.5) # Jeda antar request (sopan ke server API)
+            
     return all_rows
 
 
@@ -258,68 +257,47 @@ def write_csv(rows: list[dict], path: Path) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Fetch data historis PM2.5/PM10 Jakarta dari OpenAQ")
-    parser.add_argument("--days", type=int, default=30, help="Ambil N hari terakhir (default 30)")
-    parser.add_argument("--date-from", type=str, default=None, help="Override tanggal awal, format YYYY-MM-DD")
-    parser.add_argument("--date-to", type=str, default=None, help="Override tanggal akhir, format YYYY-MM-DD")
-    parser.add_argument("--out-dir", type=str, default=str(OUTPUT_DIR), help="Folder output CSV")
+    parser = argparse.ArgumentParser(description="Fetch historical PM2.5 & PM10 from OpenAQ for 5 Jakarta Regions")
+    parser.add_argument("--date-from", type=str, default="2024-01-01", help="Format YYYY-MM-DD")
+    parser.add_argument("--date-to", type=str, default=None, help="Format YYYY-MM-DD")
+    parser.add_argument("--out-dir", type=str, default=str(OUTPUT_DIR))
     args = parser.parse_args()
 
-    if args.date_to:
-        date_to = args.date_to
-    else:
-        date_to = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    if args.date_from:
-        date_from = args.date_from
-    else:
-        date_from = (datetime.now(timezone.utc) - timedelta(days=args.days)).strftime("%Y-%m-%d")
-
+    date_to = args.date_to or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_from = args.date_from
     out_dir = Path(args.out_dir)
 
-    print(f"Rentang tanggal: {date_from} s/d {date_to}")
-
+    print(f"Menjalankan pipeline OpenAQ: {date_from} s/d {date_to}")
     session = make_session()
     locations = get_jakarta_locations(session)
-    sensors = extract_target_sensors(locations)
+    sensors = map_sensors_to_target_stations(locations)
 
-    if not sensors:
-        print("Tidak ada sensor PM2.5/PM10 ditemukan di bbox ini. Cek JAKARTA_BBOX.")
-        return
-
+    data_per_region = defaultdict(list)
     total_rows = 0
-    summary = []
+
     for i, sensor in enumerate(sensors, start=1):
-        label = f"{sensor['location_name']} ({sensor['parameter']}, sensor {sensor['sensor_id']})"
-        print(f"[{i}/{len(sensors)}] Mengambil {label} ...")
+        label = f"{sensor['target_region']} | {sensor['parameter']} | Stasiun: {sensor['actual_location_name']}"
+        print(f"[{i}/{len(sensors)}] Fetching {label} ...")
+        
         rows = fetch_sensor_hours(session, sensor, date_from, date_to)
         if not rows:
-            print("  Tidak ada data untuk sensor ini di rentang tanggal tsb, dilewati.")
-            summary.append({**sensor, "rows": 0, "first": None, "last": None})
+            print("  Tidak ada data.")
             continue
-        filename = f"{safe_filename(sensor['location_name'])}__sensor{sensor['sensor_id']}__{sensor['parameter']}.csv"
-        write_csv(rows, out_dir / filename)
-        print(f"  Disimpan {len(rows)} baris -> {out_dir / filename}")
+            
+        data_per_region[sensor['target_region']].extend(rows)
         total_rows += len(rows)
-        timestamps = sorted(r["datetime_utc"] for r in rows if r["datetime_utc"])
-        summary.append(
-            {
-                **sensor,
-                "rows": len(rows),
-                "first": timestamps[0] if timestamps else None,
-                "last": timestamps[-1] if timestamps else None,
-            }
-        )
 
-    print(f"\nSelesai. Total {total_rows} baris data disimpan ke {out_dir}/")
+    print(f"\nSemua data berhasil ditarik. Mulai menyimpan ke dalam CSV per wilayah...")
 
-    print("\nRingkasan per sensor (diurutkan dari histori terbanyak):")
-    print(f"{'Lokasi':40s} {'Param':6s} {'Baris':>8s}  {'Dari':20s} {'Sampai':20s}")
-    for s in sorted(summary, key=lambda x: x["rows"], reverse=True):
-        print(
-            f"{s['location_name'][:40]:40s} {s['parameter']:6s} {s['rows']:8d}  "
-            f"{str(s['first'] or '-'):20s} {str(s['last'] or '-'):20s}"
-        )
+    for region, region_rows in data_per_region.items():
+        # Urutkan berdasarkan waktu
+        region_rows.sort(key=lambda x: (x["datetime_utc"] or "", x["parameter"]))
+        
+        filename = f"{region}.csv"
+        write_csv(region_rows, out_dir / filename)
+        print(f"  Disimpan {len(region_rows)} baris -> {out_dir / filename}")
+
+    print(f"\nSelesai! Total {total_rows} baris disimpan ke {out_dir}/")
 
 
 if __name__ == "__main__":
