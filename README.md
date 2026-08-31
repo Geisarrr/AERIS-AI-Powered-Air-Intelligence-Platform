@@ -1,4 +1,4 @@
-# 🌍 AERIS — AI-Powered Air Intelligence Platform
+# AERIS — AI-Powered Air Intelligence Platform
 
 > **Intelligence behind the air you breathe.**
 
@@ -96,7 +96,7 @@ The application is orchestrated using **Docker Compose**.
 
 ---
 
-## 🧩 Technology Stack
+## Technology Stack
 
 ### Frontend
 
