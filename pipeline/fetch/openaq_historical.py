@@ -32,7 +32,7 @@ TARGET_STATIONS = [
     {"region": "jakarta_pusat", "name": "Bunderan HI / US Embassy", "lat": -6.182536, "lon": 106.828236},
     {"region": "jakarta_selatan", "name": "Jagakarsa", "lat": -6.325500, "lon": 106.814400},
     {"region": "jakarta_barat", "name": "Kebon Jeruk", "lat": -6.194900, "lon": 106.764500},
-    {"region": "jakarta_timur", "name": "Lubang Buaya", "lat": -6.289600, "lon": 106.900300},
+    {"region": "jakarta_timur", "name": "Jatinegara", "lat": -6.212000, "lon": 106.883000},
     {"region": "jakarta_utara", "name": "Kelapa Gading", "lat": -6.155300, "lon": 106.892300},
 ]
 
