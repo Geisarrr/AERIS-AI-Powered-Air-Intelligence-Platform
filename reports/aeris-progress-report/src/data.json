@@ -1,0 +1,383 @@
+{
+  "title": "AERIS telah membangun fondasi data, tetapi produk intelijennya belum terhubung",
+  "generatedAt": "2026-09-04T00:00:00+07:00",
+  "status": "reviewed",
+  "filters": [],
+  "queries": {
+    "recent_progress": {
+      "rows": [
+        {
+          "deliverable": "Incremental ISPU collector",
+          "status": "Implemented in code",
+          "evidence": "ispu.py sekarang memakai UTC/local timestamps, source/target identity, quality flags, retry, atomic writes, status log, resume by date, dan refresh tiga hari terbaru.",
+          "remaining": "Konsolidasikan dengan ispu_resume.py dan tambahkan test."
+        },
+        {
+          "deliverable": "Historical ISPU collection",
+          "status": "Collected with caveats",
+          "evidence": "4.885 station-days untuk lima wilayah, 2024-01-01 sampai 2026-09-03; 3.755 status ok, 1.130 empty, dan 0 error.",
+          "remaining": "Perbaiki lima malformed rows pada master dan tetapkan rule completeness."
+        },
+        {
+          "deliverable": "Weather enrichment",
+          "status": "Collected with caveats",
+          "evidence": "116.640 hourly rows, lima wilayah, 22 kolom, sampai 2026-08-29 UTC; sembilan fitur tambahan tersedia.",
+          "remaining": "Tentukan treatment untuk 21.840 boundary_layer_height null."
+        },
+        {
+          "deliverable": "ISPU merge utility",
+          "status": "Implemented, not executed",
+          "evidence": "merge_ispu_to_aeris_v2.py menyediakan normalized region/hour key, duplicate guard, left join, missing flags, dan row-count guard.",
+          "remaining": "Output data/processed/merge belum tersedia dan enriched weather belum digabung."
+        }
+      ],
+      "source": {
+        "label": "Perubahan repository dan data lokal sejak snapshot 3 September 2026",
+        "files": [
+          "pipeline/fetch/ispu.py",
+          "pipeline/fetch/ispu_resume.py",
+          "pipeline/fetch/weather_enrichment.py",
+          "pipeline/clean/merge_ispu_to_aeris_v2.py",
+          "data/raw/ispu/status/ispu_fetch_status.csv.gz",
+          "data/processed/ispu_master.parquet",
+          "data/processed/weather_enriched_master.parquet"
+        ],
+        "filters": [
+          "Status collection berasal dari status log lokal; kualitas nilai diperiksa terpisah pada master dataset.",
+          "Implemented in code tidak berarti sudah memiliki automated test atau sudah menjadi workflow production."
+        ],
+        "metricDefinitions": [
+          {
+            "label": "Recent deliverable status",
+            "definition": "Status membedakan keberadaan implementasi, keberadaan output, dan caveat kualitas output.",
+            "componentIds": [
+              "report-recent-progress",
+              "report-summary"
+            ]
+          }
+        ]
+      }
+    },
+    "roadmap_status": {
+      "rows": [
+        {
+          "phase": "Phase 1 — Foundation",
+          "status": "In progress",
+          "evidence": "Next.js, FastAPI, Docker Compose, PostgreSQL/PostGIS, Redis, historical ISPU/OpenAQ, dan enriched weather tersedia; auth, database integration, API produk, dan live map belum tersedia.",
+          "nextGate": "Canonical dataset tervalidasi disimpan ke database dan dibaca melalui API serta dashboard minimal."
+        },
+        {
+          "phase": "Phase 2 — Machine Learning",
+          "status": "Data preparation",
+          "evidence": "Base dataset, ISPU master, enriched weather master, dan utility merge tersedia; quality gate, feature pipeline teruji, training, evaluasi, registry, dan inference belum ada.",
+          "nextGate": "Dataset training bebas malformed rows/leakage dan baseline forecasting tervalidasi per wilayah/horizon."
+        },
+        {
+          "phase": "Phase 3 — Intelligence",
+          "status": "Not started",
+          "evidence": "Belum ada event detection, smart alert, health recommendation, source attribution, atau AI brief.",
+          "nextGate": "Output forecast stabil dan kontrak insight/recommendation disepakati."
+        },
+        {
+          "phase": "Phase 4 — Geospatial Intelligence",
+          "status": "Early preparation",
+          "evidence": "Extractor OSM dan validator lokasi tersedia; output OSM belum ada dan belum terintegrasi.",
+          "nextGate": "Station registry dan fitur spasial konsisten serta terhubung ke dataset."
+        },
+        {
+          "phase": "Phase 5 — MLOps & Scalability",
+          "status": "Not started",
+          "evidence": "Redis baru diprovision; Prefect, MLflow, DVC, GitHub Actions, observability, dan scheduled pipeline belum tersedia.",
+          "nextGate": "Pipeline reproducible dengan versioning data/model, automated tests, dan CI."
+        }
+      ],
+      "source": {
+        "label": "PRD roadmap dibandingkan dengan repository AERIS pada 4 September 2026",
+        "files": [
+          "/Users/geisarrampan/.codex/attachments/02ce0e86-b0cb-4375-a243-d79b60637048/pasted-text.txt",
+          "README.md",
+          "docker-compose.yml",
+          "backend/app/main.py",
+          "frontend/app/page.tsx",
+          "pipeline",
+          "data/processed"
+        ],
+        "filters": [
+          "Rencana di README/PRD tidak dihitung sebagai implementasi tanpa artefak yang dapat diperiksa."
+        ],
+        "metricDefinitions": [
+          {
+            "label": "Status roadmap",
+            "definition": "Implemented berarti tersedia end-to-end; in progress/data preparation berarti artefak parsial ada tetapi acceptance gate fase belum tercapai; not started berarti tidak ditemukan implementasi substantif.",
+            "componentIds": [
+              "report-roadmap"
+            ]
+          }
+        ]
+      }
+    },
+    "capability_status": {
+      "rows": [
+        {
+          "area": "Monorepo & service structure",
+          "status": "Implemented",
+          "evidence": "Struktur backend, frontend, pipeline, data, dan ml tersedia."
+        },
+        {
+          "area": "Docker Compose",
+          "status": "Implemented",
+          "evidence": "Empat service tersedia; database dan Redis memiliki health check."
+        },
+        {
+          "area": "Frontend product",
+          "status": "Partial",
+          "evidence": "Next.js/React/TypeScript/Tailwind tersedia, tetapi UI masih scaffold."
+        },
+        {
+          "area": "Backend API",
+          "status": "Partial",
+          "evidence": "FastAPI menyediakan GET / dan GET /health; endpoint produk PRD belum ada."
+        },
+        {
+          "area": "PostgreSQL/PostGIS",
+          "status": "Partial",
+          "evidence": "Service tersedia, tetapi belum ada schema, model, migration, atau integration."
+        },
+        {
+          "area": "Redis",
+          "status": "Partial",
+          "evidence": "Service tersedia, tetapi belum digunakan untuk cache atau queue."
+        },
+        {
+          "area": "Historical ingestion",
+          "status": "Partial",
+          "evidence": "OpenAQ, Open-Meteo, ISPU incremental collection, dan enriched weather tersedia; belum terjadwal/orchestrated."
+        },
+        {
+          "area": "Canonical source/time metadata",
+          "status": "Partial",
+          "evidence": "ISPU kini menyimpan UTC, local time, source timezone, serta source/target station identity; kontrak lintas sumber belum dipusatkan."
+        },
+        {
+          "area": "Data validation & cleaning",
+          "status": "Partial",
+          "evidence": "Quality flags, status log, duplicate/row guards, dan point-in-polygon validator tersedia; belum menjadi quality gate terpadu."
+        },
+        {
+          "area": "Dataset generation",
+          "status": "Partial",
+          "evidence": "Tiga master dataset tersedia dan merge utility ditulis; output canonical merge belum dibuat atau tervalidasi."
+        },
+        {
+          "area": "Geospatial features",
+          "status": "Partial",
+          "evidence": "Extractor OSM tersedia, tetapi output dan integrasinya belum ada."
+        },
+        {
+          "area": "Real-time monitoring & map",
+          "status": "Not started",
+          "evidence": "Belum ada live ingestion, map, AQI service, atau station UI."
+        },
+        {
+          "area": "ML forecasting/anomaly/SHAP",
+          "status": "Not started",
+          "evidence": "Belum ada training, evaluation, model artifact, atau inference code."
+        },
+        {
+          "area": "Alerts, recommendations & AI brief",
+          "status": "Not started",
+          "evidence": "Belum ada rules, personalization, notification, atau generation layer."
+        },
+        {
+          "area": "Testing & CI/CD",
+          "status": "Not started",
+          "evidence": "Tidak ditemukan pytest suite, Ruff config, atau GitHub Actions workflow."
+        },
+        {
+          "area": "Prefect/MLflow/DVC/monitoring",
+          "status": "Not started",
+          "evidence": "Belum ditemukan konfigurasi atau implementasi MLOps/orchestration."
+        }
+      ],
+      "source": {
+        "label": "Capability inventory dari PRD dan repository",
+        "files": [
+          "README.md",
+          "docker-compose.yml",
+          "backend",
+          "frontend",
+          "pipeline",
+          "ml",
+          "data/processed"
+        ],
+        "filters": [
+          "Dataset lokal diperiksa sebagai evidence meskipun diabaikan Git."
+        ],
+        "metricDefinitions": [
+          {
+            "label": "Capability status",
+            "definition": "Status kualitatif berdasarkan keberadaan, output, dan keterhubungan implementasi; bukan persentase usaha atau waktu.",
+            "componentIds": [
+              "report-capabilities",
+              "report-summary"
+            ]
+          }
+        ]
+      }
+    },
+    "dataset_inventory": {
+      "rows": [
+        {
+          "dataset": "OpenAQ raw — 5 regions",
+          "rows": 126163,
+          "from": "2023-12-31 17:00 UTC",
+          "to": "2026-08-31 11:00 UTC",
+          "notes": "PM2.5/PM10; coverage wilayah tidak seimbang; 15.341 value kosong."
+        },
+        {
+          "dataset": "Open-Meteo base — 5 regions",
+          "rows": 116640,
+          "from": "2024-01-01 00:00 UTC",
+          "to": "2026-08-29 23:00 UTC",
+          "notes": "Enam fitur cuaca per jam."
+        },
+        {
+          "dataset": "dataset_aeris_final.csv",
+          "rows": 62103,
+          "from": "2024-01-01 00:00",
+          "to": "2026-08-29 00:00",
+          "notes": "12 kolom; hasil pivot OpenAQ dan inner join cuaca; imputasi lama belum tervalidasi."
+        },
+        {
+          "dataset": "ISPU valid hourly grid",
+          "rows": 117240,
+          "from": "2023-12-31 17:00 UTC",
+          "to": "2026-09-03 16:00 UTC",
+          "notes": "23.448 rows per wilayah; 65.190 memiliki minimal satu polutan; 52.050 kehilangan semua polutan."
+        },
+        {
+          "dataset": "ispu_master.parquet",
+          "rows": 117245,
+          "from": "2023-12-31 17:00 UTC",
+          "to": "2026-09-03 16:00 UTC",
+          "notes": "23 kolom; mengandung lima malformed rows karena status log ikut terbaca oleh glob."
+        },
+        {
+          "dataset": "weather_enriched_master.parquet",
+          "rows": 116640,
+          "from": "2024-01-01 00:00 UTC",
+          "to": "2026-08-29 23:00 UTC",
+          "notes": "22 kolom; boundary_layer_height null pada 21.840 rows (Jan–Jun 2024)."
+        },
+        {
+          "dataset": "Prospective base + ISPU join",
+          "rows": 62103,
+          "from": "2024-01-01 00:00",
+          "to": "2026-08-29 00:00",
+          "notes": "Read-only audit: 100% hour keys match; 35.129 rows memiliki polutan ISPU; 32.321 lengkap 6/6; output belum disimpan."
+        }
+      ],
+      "source": {
+        "label": "Inventaris dan audit dataset lokal pada 4 September 2026",
+        "files": [
+          "data/raw/openaq/*.csv",
+          "data/raw/openmeteo/*.csv",
+          "data/raw/ispu/**/*.csv.gz",
+          "data/processed/dataset_aeris_final.csv",
+          "data/processed/ispu_master.parquet",
+          "data/processed/weather_enriched_master.parquet"
+        ],
+        "filters": [
+          "Row count tidak termasuk header.",
+          "Prospective join dihitung read-only menggunakan target_region + UTC hour dan tidak dianggap output pipeline."
+        ],
+        "metricDefinitions": [
+          {
+            "label": "Rows",
+            "definition": "Jumlah record pada file lokal; ISPU valid hourly grid mengecualikan lima rows tanpa observed_at_utc.",
+            "componentIds": [
+              "report-data-inventory",
+              "report-summary"
+            ]
+          }
+        ]
+      }
+    },
+    "risk_register": {
+      "rows": [
+        {
+          "priority": "P0",
+          "risk": "ISPU master terkontaminasi status log",
+          "evidence": "Glob */ispu_*.csv.gz ikut membaca status/ispu_fetch_status.csv.gz dan menghasilkan satu row tanpa timestamp untuk setiap wilayah.",
+          "action": "Batasi glob ke folder region atau exclude status; regenerate master dan assert non-null join key."
+        },
+        {
+          "priority": "P0",
+          "risk": "ISPU sangat sparse dan HC sepenuhnya kosong",
+          "evidence": "Dari 117.240 valid hourly rows, 52.050 (44,4%) kehilangan semua polutan; HC null pada seluruh master.",
+          "action": "Tetapkan inclusion, missingness, dan pollutant availability rules sebelum merge/training."
+        },
+        {
+          "priority": "P0",
+          "risk": "Canonical training dataset belum terbentuk",
+          "evidence": "ISPU dan enriched weather master ada, tetapi output merge tidak ada; base dataset masih memakai pipeline/imputasi lama.",
+          "action": "Bangun satu merge tervalidasi dengan lineage, quality report, dan time-aware imputation policy."
+        },
+        {
+          "priority": "P0",
+          "risk": "Produk belum memiliki jalur data end-to-end",
+          "evidence": "Database, product endpoints, dan frontend dashboard belum terhubung ke dataset.",
+          "action": "Setelah canonical dataset lolos gate, implementasikan vertical slice historical/latest."
+        },
+        {
+          "priority": "P1",
+          "risk": "Boundary-layer height tidak lengkap",
+          "evidence": "21.840 weather rows (18,72%), seluruhnya Jan–Jun 2024, tidak memiliki boundary_layer_height.",
+          "action": "Drop feature, batasi training window, atau buat missing indicator berdasarkan evaluasi model."
+        },
+        {
+          "priority": "P1",
+          "risk": "Duplikasi pipeline dan portability",
+          "evidence": "ispu.py dan ispu_resume.py tumpang tindih; merge utility memakai absolute paths; dependency pipeline belum lengkap.",
+          "action": "Pilih satu entry point, gunakan relative/configurable paths, dan lock dependency."
+        },
+        {
+          "priority": "P1",
+          "risk": "OpenAQ mapping dan imputasi lama belum aman",
+          "evidence": "Sensor dipetakan tanpa maximum-distance threshold; forward/backward fill dilakukan sebelum chronological ordering dijamin.",
+          "action": "Pertahankan base hanya sebagai legacy input sampai pipeline canonical menggantikannya."
+        }
+      ],
+      "source": {
+        "label": "Risiko teknis hasil review kode dan audit data lokal",
+        "files": [
+          "pipeline/fetch/ispu.py",
+          "pipeline/fetch/ispu_resume.py",
+          "pipeline/fetch/weather_enrichment.py",
+          "pipeline/clean/merge_ispu_to_aeris_v2.py",
+          "pipeline/fetch/merge_data.py",
+          "pipeline/fetch/requirements.txt",
+          "data/processed/ispu_master.parquet",
+          "data/processed/weather_enriched_master.parquet"
+        ],
+        "filters": [
+          "Prioritas adalah rekomendasi urutan penanganan, bukan probabilitas formal."
+        ],
+        "metricDefinitions": [
+          {
+            "label": "Risk priority",
+            "definition": "P0 menghalangi validitas canonical dataset/model atau vertical slice; P1 memengaruhi reliability dan reproducibility.",
+            "componentIds": [
+              "report-risks"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "surface": "report",
+  "report": {
+    "asOf": "2026-09-04"
+  },
+  "id": "report:a11c1336-5c7e-4c52-9176-371da242b70c"
+}
