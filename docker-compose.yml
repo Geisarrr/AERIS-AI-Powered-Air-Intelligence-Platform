@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aeris}
       POSTGRES_DB: ${POSTGRES_DB:-aeris}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - aeris_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -38,7 +38,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-aeris}:${POSTGRES_PASSWORD:-aeris}@db:5432/${POSTGRES_DB:-aeris}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aeris}:${POSTGRES_PASSWORD:-aeris}@db:5432/${POSTGRES_DB:-aeris}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       db:

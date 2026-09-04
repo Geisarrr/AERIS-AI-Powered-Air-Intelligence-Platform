@@ -30,3 +30,6 @@ mlflow/
 # IDE
 .vscode/
 .idea/
+
+__pycache__/
+*.py[cod]
